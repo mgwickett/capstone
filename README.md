@@ -1,6 +1,9 @@
-# International Affairs Capstone Project
+# Coding Samples
 
-Project description: Senior capstone project investigating how the outcome of a civil war affects what types of constitutional changes are made afterwards. Methods include chi-squared analysis and data visualization. 
+*capstone*: International affairs senior capstone project investigating the affect of civil war outcomes on constitutional changes. Skills include chi-squared tests and data visualization. 
 
-Files
-- analysis.Rmd : 
+*das*: Data analytics and security course focused on using machine learning methods for problems in international relations. This folder includes all homework assignments and exams for the course, written in R. 
+
+*das-note*: Research note for data analytics and security course. Uses random forest modeling to look at predictors for coups.  
+
+*mlbasics*: Computer science course implementing basic machine learning algorithms. Demonstrates competency in numpy and ML algorithms. 
