@@ -1,0 +1,137 @@
+---
+title: "INTA 4500"
+author: "Madi Wickett"
+date: "11/14/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r}
+library(effects)
+library(caret)
+library(ROCR)
+library(doMC)
+library(tidyverse)
+library(corrr)
+library(DALEX)
+library(graphics)
+library(gplots)
+```
+
+```{r}
+setwd("/Documents/GT/inta4500")
+```
+
+```{r}
+wars_consts<-read.csv("combined_v6.csv")
+```
+
+DO NOT RUN THIS MULTIPLE IMES
+```{r}
+wars_consts<-wars_consts[-1,]
+```
+
+```{r}
+wars_consts$helper = wars_consts$War + wars_consts$PostWar
+```
+
+```{r}
+tbl<-table(wars_consts$evnttype, wars_consts$helper)
+chi2<-chisq.test(tbl, correct = T)
+chi2$p.value
+sqrt(chi2$statistic / sum(tbl))
+```
+
+```{r}
+justwar<-wars_consts[wars_consts$helper > 0, ]
+table(justwar$evnttype, justwar$PostWar)
+```
+
+```{r}
+colnames(wars_consts)
+```
+
+now we're moving onto neural networks because i'm tired :)
+```{r}
+usable_vars = subset(wars_consts, select = -c(X, cowcode, country, year, systid, evntid, helper))
+sample_size = 20428/2
+set.seed(24601)
+picked = sample(seq_len(nrow(usable_vars)), size = sample_size)
+training = usable_vars[picked,]
+testing = usable_vars[-picked,]
+```
+
+```{r}
+usable_vars
+```
+
+my factor friends 
+```{r}
+training$evnttype<-factor(
+  training$evnttype,
+  levels = c(0, 1, 2, 3, 4, 5),
+  labels = c("nonevent", "new", "amendment", "interim", "suspended", "reinstated")
+)
+```
+
+```{r}
+fitControl<-trainControl(method = "cv",
+                         number = 10,
+                         classProb = TRUE,
+                         savePredictions = TRUE,
+                         allowParallel = TRUE)
+```
+
+```{r}
+registerDoMC(cores = 2)
+
+train.rf<-train(as.factor(evnttype) ~.,
+                method = "rf",
+                trControl = fitControl,
+                metric = "ROC",
+                ntree = 1000,
+                data = training)
+train.rf
+```
+
+```{r}
+testing$evnttype<-factor(
+  testing$evnttype,
+  levels = c(0, 1, 2, 3, 4, 5),
+  labels = c("nonevent", "new", "amendment", "interim", "suspended", "reinstated")
+)
+```
+
+```{r}
+pred.rf<-predict(train.rf, newdata = testing, type = "raw")
+confusionMatrix(pred.rf, testing$evnttype, mode = "everything")
+```
+
+```{r}
+justwar<-wars_consts[wars_consts$helper > 1,]
+justwar<-justwar[justwar$evntid >0,]
+justwar<-na.omit(justwar)
+justwar$evnttype<-factor(justwar$evnttype,
+                         levels = c(1, 2, 3, 4, 5),
+                         labels = c("New", "Amendment", "Interim", "Suspended", "Reinstated"))
+justwar$helper<-factor(justwar$helper,
+                       labels = c("Post-War", "War, no recent war", "War after recent war"))
+dt<-table(justwar$evnttype, justwar$helper)
+mycol<-c("#fad07c")
+balloonplot(dt, text.size = 0.8, dotcolor = mycol, main = "Types of Constitutional Change During and After War")
+```
+Outcomes
+```{r}
+outcomes<-wars_consts[wars_consts$Outcome > 0,]
+outcomes<-outcomes[outcomes$Outcome < 4,]
+outcomes$evnttype<-factor(outcomes$evnttype,
+                         levels = c(0, 1, 2, 3),
+                         labels = c("No Change", "New", "Amendment", "Interim"))
+outcomes$Outcome<-factor(outcomes$Outcome,
+                         levels = c(1, 2, 3), 
+                         labels = c("Government Win", "Rebel Win", "Negotiated Settlement"))
+dt2<-table(outcomes$evnttype, outcomes$Outcome)
+mycol<-c("#fad07c")
+balloonplot(dt2, text.size = 0.8, dotcolor = mycol, main = "Types of Constitutional Change Based on War Outcome")
+```
+
