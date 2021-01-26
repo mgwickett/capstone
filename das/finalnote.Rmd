@@ -1,0 +1,202 @@
+---
+title: "final_paper"
+author: "Madi Wickett"
+date: "11/21/2020"
+output: html_document
+---
+```{r}
+coups_data<-read.csv("coups_v3.csv")
+```
+
+```{r}
+vdem<-read.csv("V-Dem-CY-Core-v10.csv")
+```
+
+```{r}
+library(caret)
+library(ROCR)
+library(doMC)
+library(tidyverse)
+library(corrr)
+library(DALEX)
+library(DALEXtra)
+```
+
+```{r}
+fitControl<-trainControl(method = "cv",
+                         number = 10,
+                         summaryFunction = twoClassSummary, 
+                         classProb = TRUE,
+                         savePredictions = TRUE,
+                         allowParallel = TRUE)
+```
+
+```{r}
+colnames(coups_data)
+coups_dich<-0
+coups_data$any_coup<-coups_dich
+coups_data<-mutate(coups_data, any_coup = ifelse(coups_data$AllCoups > 0, 1, 0))
+# mutate(usable2, )
+```
+
+```{r}
+allcoups<-subset(coups_data, any_coup == 1)
+allcoups
+```
+
+
+```{r}
+usable<-coups_data[-c(1, 2, 4, 7, 8, 9, 10, 11)]
+```
+
+```{r}
+usable<-na.omit(usable)
+colnames(usable)
+```
+
+
+```{r}
+sample_size = 11031/2
+set.seed(24601)
+picked<-sample(seq_len(nrow(usable)), size = sample_size)
+training<-usable[picked,]
+testing<-usable[-picked,]
+```
+
+```{r}
+training$any_coup<-factor(training$any_coup,
+                          levels = c(0, 1),
+                          labels = c("None", "Coup"))
+```
+
+```{r}
+coup_specific<-subset(training, any_coup == "Coup")
+coup_specific
+```
+
+```{r}
+train.rf<-train(any_coup~.,
+                method = "rf",
+                trControl = fitControl,
+                metric = "ROC",
+                ntree = 1000,
+                data = training[-c(1, 2)])
+train.rf
+```
+
+```{r}
+testing$any_coup<-factor(testing$any_coup,
+                          levels = c(0, 1),
+                          labels = c("None", "Coup"))
+```
+
+```{r}
+pred.rf<-predict(train.rf, newdata = testing, type = "raw")
+confusionMatrix(pred.rf, testing$any_coup, mode = "everything")
+```
+
+```{r}
+rf.imp<-varImp(train.rf, scale = FALSE)
+ggplot(rf.imp)
+```
+
+```{r}
+y2_vdem<-subset(vdem, year >= 1950)
+y_vdem<-subset(y2_vdem, select = -c(country_name, country_text_id, historical_date, histname)) 
+```
+
+```{r}
+nzv<-nearZeroVar(y_vdem)
+dim(y_vdem)
+```
+
+```{r}
+f_vdem<-y_vdem[, -nzv]
+dim(f_vdem)
+```
+```{r}
+head(f_vdem)
+```
+
+```{r}
+f_vdem[is.na(f_vdem)]<-0
+highlyCor<-findCorrelation(cor(f_vdem, use = "pairwise.complete.obs"), cutoff = 0.9)
+fc_vdem<-f_vdem[, -highlyCor]
+dim(fc_vdem)
+```
+
+```{r}
+fc_vdem$country_name<-y2_vdem$country_name
+```
+
+```{r}
+fc_vdem$helper<-paste(fc_vdem$country_name, fc_vdem$year)
+```
+
+```{r}
+usable$helper<-paste(usable$country, usable$year)
+colnames(usable)
+```
+
+```{r}
+# now i need to add all the coup variables to the vdem dataset 
+u_sort<-usable[order("helper"), ]
+fcvd_sort<-fc_vdem[order("helper"), ]
+```
+
+```{r}
+combo<-merge(usable, fc_vdem, by="helper")
+```
+
+```{r}
+colnames(combo)
+```
+
+```{r}
+sample_size2 = 9918/2
+set.seed(24601)
+picked2<-sample(seq_len(nrow(combo)), size = sample_size2)
+training2<-combo[picked2,]
+testing2<-combo[-picked2,]
+```
+
+
+```{r}
+training2$any_coup<-factor(training2$any_coup,
+                          levels = c(0, 1),
+                          labels = c("None", "Coup"))
+```
+
+
+```{r}
+registerDoMC(cores = 3)
+```
+
+```{r}
+train.rf2<-train(any_coup~.,
+                method = "rf",
+                trControl = fitControl,
+                metric = "ROC",
+                ntree = 100,
+                data = training2[-c(1, 2, 3, 9, 10, 15, 472)])
+train.rf2
+```
+
+```{r}
+testing2$any_coup<-factor(testing2$any_coup,
+                          levels = c(0, 1),
+                          labels = c("None", "Coup"))
+```
+
+```{r}
+pred.rf2<-predict(train.rf2, newdata = testing2, type = "raw")
+confusionMatrix(pred.rf2, testing2$any_coup, mode = "everything")
+```
+
+```{r}
+rf.imp2<-varImp(train.rf2, scale = FALSE)
+vi<-rf.imp2$importance
+viplot<-sort(vi$Overall, decreasing = TRUE)
+viplot<-bonk2[1:20]
+ggplot(rf.imp2, top = 20)
+```

@@ -1,0 +1,279 @@
+---
+title: "INTA 4803 Homework 2"
+author: "Madi Wickett"
+output: html_document
+---
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(error = TRUE)
+``` 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+fl_dataset<-read.csv(file = "Homework 2 Dataset.csv")
+```
+
+```{r}
+library(caret)
+library(ROCR)
+library(doMC)
+library(tidyverse)
+library(corrr)
+library(e1071)
+```
+
+
+```{r}
+training<-subset(fl_dataset, year <= 1980)
+testing<-subset(fl_dataset, year > 1980)
+
+training<-na.omit(training)
+testing<-na.omit(testing)
+```
+
+```{r}
+training$warstds<-factor(
+  training$warstds,
+  level = c(0, 1),
+  labels = c("None", "CivilWar")
+)
+
+testing$warstds<-factor(
+  testing$warstds,
+  level = c(0, 1),
+  labels = c("None", "CivilWar")
+)
+```
+
+## Question I
+### Fearon & Laitin (2003) Replication
+```{r}
+fitControl<-trainControl(method = "cv",
+                         number = 10,
+                         summaryFunction = twoClassSummary,
+                         classProbs = TRUE,
+                         savePredictions = TRUE)
+```
+
+
+```{r}
+mod.logit<-train(as.factor(warstds) ~ ln_gdpen+lpopns+lmtnest+ncontig+oil+nwstate+inst3+pol4+ef+relfrac, 
+                 method = "glm",
+                 trControl=fitControl, 
+                 family = "binomial",
+                 metric = "ROC", 
+                 data = training[c(-1, -2)])
+mod.logit
+```
+
+As seen below, no onsets were correctly predicted by Fearon and Laitin's model 
+```{r}
+pred.mod.logit<-predict(mod.logit, newdata = testing, type = "raw")
+confusionMatrix(pred.mod.logit, testing$warstds, positive = "CivilWar", mode = "everything")
+```
+
+### Elastic Net Model w/ F&L Features
+An elastic net model using the same features as Fearon & Laitin's study produces 0 correct onsets. 
+```{r}
+set.seed(38745)
+mod.enet<-train(as.factor(warstds) ~ warhist+ln_gdpen+lpopns+lmtnest+ncontig+oil+nwstate+inst3+pol4+ef+relfrac, 
+                 method = "glmnet",
+                 trControl=fitControl, 
+                 metric = "ROC", 
+                 data = training[c(-1, -2)])
+mod.enet
+```
+
+```{r}
+pred.mod.enet<-predict(mod.enet, newdata = testing, type = "raw")
+confusionMatrix(pred.mod.enet, testing$warstds, positive = "CivilWar", mode = "everything")
+```
+
+Non-zero factors for the Fearon and Laitin Model
+```{r}
+coef_fl<-coef(mod.enet$finalModel, mod.enet$bestTune$lambda)
+as.table(as.matrix(coef_fl))
+```
+
+
+### Elastic Net with All Features
+An elastic net model with all features correctly predicts two civil war onsets. 
+```{r}
+set.seed(38745)
+mod.enet2<-train(as.factor(warstds) ~., 
+                 method = "glmnet",
+                 trControl=fitControl, 
+                 metric = "ROC", 
+                 data = training[c(-1, -2)])
+mod.enet2
+```
+
+```{r}
+pred.mod.enet2<-predict(mod.enet2, newdata = testing, type = "raw")
+confusionMatrix(pred.mod.enet2, testing$warstds, positive = "CivilWar", mode = "everything")
+```
+
+Non-zero factors for all possible predictors
+```{r}
+coef_all<-coef(mod.enet2$finalModel, mod.enet2$bestTune$lambda)
+coef_df<-as.data.frame(as.matrix(coef_all))
+colnames(coef_df)<-c("value")
+coef_nz<-subset(coef_df, value != 0)
+as.table(as.matrix(coef_nz))
+```
+
+
+### Explanation of results 
+The logistic regression model and the elastic net model with just Fearon and Laitin's variables did not show any predictive power because they were overfit based on incorrect theory. While theory can be helpful for finding which correlations are spurious or which variables are just a translation of another variable, if the theory is incorrect, you may be excluding important predictors. 
+
+This is why the elastic net with all possible predictors performed the best out of the three. Without any bias from the researchers or the theory, we can see the influence of all possible variables 
+
+## Question II
+```{r}
+set.seed(38745)
+train.rf<-train(as.factor(warstds)~., 
+                method = "rf",
+                trControl = fitControl, 
+                ntrees = 1000, 
+                metric = "ROC",
+                sampsize=c(140, 50),
+                data = training[c(-1, -2)]
+                )
+train.rf
+```
+
+```{r}
+pred.rf<-predict(train.rf, newdata = testing, type = "raw")
+confusionMatrix(pred.rf, testing$warstds, positive = "CivilWar", mode = "everything")
+```
+Random forests correctly predicts 24 civil war onsets. It performs better than the elastic net because random forests randomly selects predictors, meaning that a single strong predictor won't guide the entire model. Additionally, random forests internally cross-validates as it is training, so it's out-of-bag predictions tend to be more accurate. 
+
+
+## Question III
+### Predictive Accuracy
+#### Precision
+Elastic Net (F&L variables) - NA
+Elastic Net (All variables) - 0.500
+Random Forests - 0.115
+
+According to the precision measure, the Elastic Net with all variables makes the most accurate predictions. This measure is based on the number of true positives out of the number of predicted positives. The elastic net only predicted a few positives, but half of the ones predicted were true positives so it has relatively good precision. While random forests predicted more true positives, it also predicted many false positives. 
+
+#### Recall 
+Elastic Net (F&L) - 0.000
+Elastic Net (All) - 0.043
+Random Forests - 0.511
+
+According to the recall measure, random forests has the most accurate predictions because it predicted over half of the total onsets.\. This looks at the number of true positives out of the total positives. The reasoning is flipped from precision. For recall, we care more about the total number of true positives predicted rather than how many false positives were predicted. 
+
+#### F1 Statistic 
+Elastic Net (F&L) - NA
+Elastic Net (All) - 0.078
+Random Forests - 0.187
+
+According to the F1 statistic, random forests is the most accurate (though objectively not incredibly accurate). This is a combination of the previous two statistics that tries to balance precision and recall. 
+
+### ROC Plots
+```{r}
+pred.enet<-predict(mod.enet, newdata = testing, type = "prob")
+enet.pred<-prediction(pred.enet$CivilWar, testing$warstds)
+perf.enet<-performance(enet.pred, "tpr", "fpr")
+
+pred.enet2<-predict(mod.enet2, newdata = testing, type = "prob")
+enet2.pred<-prediction(pred.enet2$CivilWar, testing$warstds)
+perf.enet2<-performance(enet2.pred, "tpr", "fpr")
+
+predict.rf<-predict(train.rf, newdata = testing, type = "prob")
+rf.pred<-prediction(predict.rf$CivilWar, testing$warstds)
+perf.rf<-performance(rf.pred, "tpr", "fpr")
+```
+
+```{r}
+plot(perf.enet, main="ROC Plots for Models")
+plot(perf.enet2, add=T, lty=2, col="blue")
+plot(perf.rf, add=T, lty=3, col="red")
+legend(0.7, 0.2, c("Elastic Net (F&L)", "Elastic Net (All)", "Random Forests"), lty=c(1,2,3), bty="n", cex=0.75)
+```
+According to the ROC plots, the elastic net model with Fearon and Laitin's variables is more accurate 
+
+
+### Area under Precision-Recall Curve
+```{r}
+pr.enet<-performance(enet.pred, "prec", "rec")
+pr.enet2<-performance(enet2.pred, "prec", "rec")
+pr.rf<-performance(rf.pred, "prec", "rec")
+```
+
+```{r}
+as.numeric(performance(enet.pred, "aucpr")@y.values)
+as.numeric(performance(enet2.pred, "aucpr")@y.values)
+as.numeric(performance(rf.pred, "aucpr")@y.values)
+```
+
+
+```{r}
+plot(pr.enet, main="Precision-Recall Plots for Models")
+plot(pr.enet2, add=T, lty=2, col="blue")
+plot(pr.rf, add=T, lty=3, col="red")
+legend(0.7, 0.83, c("Elastic Net (F&L) - 0.971", "Elastic Net (All) - 0.967", "Random Forests - 0.959"), lty=c(1,2,3), bty="n", cex=0.75)
+```
+According to the precision-recall plots, the elastic net model with Fearon and Laitin's variables is more accurate. 
+
+### Conclusion
+These different metrics show the many ways that accuracy can be measured, as well as the drawbacks of both the metrics and the models themselves. With data that has very few positive cases, it is hard for standard models to make accurate predictions and for the measures to show the entire picture. The elastic net models have very high accuracy because they are identifying most, if not all, of the cases and negatives. Because of the small number of civil wars comparatively, they are only incorrectly classifying 40 out of 4000 cases, which looks like a small rate of failure. However, only accurate predicting when there is no civil war does not have a lot of value for preventing violence. 
+
+Precision, recall, and the F1 statistic care more about positive predictions, but they still have their drawbacks. Would a policymaker rather know two definite onsets of civil war and not know anything about the other 40 that are going to happen, or have a model that narrows it down to ~200 civil wars that might happen, even if 80% are wrong? 
+
+Model fit depends on the rarity of the event you are trying to predict as well as how you wish to use the model to make decisions. For events in international affairs, it's clear that simple accuracy is not a sufficient measure, and policymakers want to decide whether a few, definite "yeses" are better than many realistic "maybes."
+
+## Question IV
+### Gradient Boosted Trees
+```{r}
+set.seed(38745)
+train.gbm<-train(as.factor(warstds)~.,
+                 method = "gbm",
+                 trControl = fitControl,
+                 metric = "ROC", 
+                 data = training[c(-1, -2)])
+train.gbm
+```
+
+```{r}
+pred.gbm<-predict(train.gbm, newdata = testing, type = "raw")
+confusionMatrix(pred.gbm, testing$warstds, positive = "CivilWar", mode = "everything")
+```
+
+### Ensemble Modeling
+```{r}
+library(caretEnsemble)
+algList<-c("glmnet", "rf", "gbm")
+
+set.seed(38745)
+models<-caretList(warstds~.,
+                  data=training,
+                  trControl = fitControl,
+                  methodList = algList)
+```
+
+```{r}
+results<-resamples(models)
+summary(results)
+```
+
+```{r}
+stackControl<-trainControl(method="cv", 
+                           number = 10,
+                           summaryFunction = twoClassSummary,
+                           classProbs = T,
+                           savePredictions = TRUE,
+                           allowParallel = TRUE)
+
+set.seed(38745)
+stack.keras<-caretStack(models, method = "monmlp", metric="ROC", trControl = stackControl)
+pred.stack_nn<-predict(stack.keras, newdata = testing, type = "raw")
+```
+
+```{r}
+confusionMatrix(pred.stack_nn, testing$warstds, positive = "CivilWar", mode = "everything")
+```
+
+The ensemble model does not outperform any of the individual models on any metric that we have looked at above (accuracy, precision, recall, or F1). I would say that random forests is the most accurate model because it produces the highest number of accurate predictions, even though it does have a relatively high level of false positives. Still, it provides more information than models that have only a handful of true positives. 
