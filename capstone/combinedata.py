@@ -64,6 +64,5 @@ for index, row in const_changes.iterrows():
             newrow = pd.DataFrame(nr, columns = colnames)
             print(newrow)
             output = output.append(newrow, ignore_index = True) 
-            # print(output)
 
 output.to_csv("output_v4.csv")
