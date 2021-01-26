@@ -6,8 +6,6 @@ pd.set_option('mode.chained_assignment', None)
 wars = pd.read_csv("IntraStateWars.csv", encoding = 'latin-1')
 constitutions = pd.read_csv("ConstitutionalEvents.csv", encoding = 'latin-1')
 
-# total = wars[['WarName', 'WarType', 'CcodeA', 'SideA', 'SideB', 'StartYr1', 'EndYr1']].copy()
-
 wars["FinalEnd"] = ""
 
 for index, row in wars.iterrows(): 
@@ -23,7 +21,6 @@ for index, row in wars.iterrows():
 
 
 trimmed_wars = wars[['WarName', 'WarType', 'CcodeA', 'SideA', 'SideB', 'StartYr1', 'Outcome', 'FinalEnd']]
-# trimmed_wars.to_csv('trimmedWars.csv')
 trimmed_wars['CcodeA'] = trimmed_wars['CcodeA'].apply(str)
 trimmed_wars['StartYr1'] = trimmed_wars['StartYr1'].apply(str)
 trimmed_wars['FinalEnd'] = trimmed_wars['FinalEnd'].apply(str)
@@ -40,7 +37,6 @@ constitutions['Helper'] = constitutions['Helper'].apply(int)
 constitutions['War'] = ""
 constitutions['PostWar'] = ""
 
-# now for the horrific part 
 index, row = next(constitutions.iterrows())
 c_year = row['Helper']
 for i, r in trimmed_wars.iterrows():
@@ -59,4 +55,4 @@ for i, r in trimmed_wars.iterrows():
     else: 
         constitutions.at[index, 'PostWar'] = 0
 
-# constitutions.to_csv('combined.csv')
+constitutions.to_csv('combined.csv')
